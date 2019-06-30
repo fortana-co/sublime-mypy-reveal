@@ -38,15 +38,21 @@ If you wanted to bind <kbd>ctrl+t</kbd> to reveal type and <kbd>alt+t</kbd> to r
 
 Like Sublime Linter, this plugin assumes `mypy` is in the `$PATH` available to Sublime Text. If it's not, you'll have to set your own `executable` path in settings.
 
-If you want per-project `executable` paths, add the following to your project settings:
+If you want per-project `executable` paths, e.g. because you want mypy to have access to the packages you have installed in a virtual env, add the following to your project settings:
 
-~~~json
+```json
 {
-  "folders":
-  [
+  "folders": [
     {
-      "path": "...",
+      "path": "..."
     }
-  ]
+  ],
+  "settings": {
+    "MypyReveal.executable": "/path/to/mypy"
+  }
 }
-~~~
+```
+
+This plugin is designed to work in conjunction with the [mypy Sublime Linter plugin](https://github.com/fredcallaway/SublimeLinter-contrib-mypy).
+
+If, in your project settings, you set `SublimeLinter.linters.mypy.executable` instead of `MypyReveal.executable`, MypyReveal will fall back to this setting.

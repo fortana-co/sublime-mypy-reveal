@@ -25,8 +25,11 @@ def parse_output(out: str, line_number: int) -> str:
             log(line)
             return "<b>{}</b>".format(line.split(search)[1].strip()[1:-1])
 
-    log(line)  # no revealed type found
-    return line.split("{}: ".format(line_number))[1]
+    try:
+        log(line)  # no revealed type found
+        return line.split("{}: ".format(line_number))[1]
+    except Exception:
+        return ""
 
 
 def parse_locals_output(out: str, line_number: int) -> str:
@@ -51,44 +54,45 @@ def parse_locals_output(out: str, line_number: int) -> str:
 
 
 class MypyRevealCommand(sublime_plugin.TextCommand):
-    def run(self, edit, locals=False) -> None:
+    def run(self, edit, locals: bool = False, failed: bool = False) -> None:
         for r in self.view.sel():
             if locals:
                 self.view.run_command("move_to", {"to": "eol"})
                 self.view.run_command("insert", {"characters": "\nreveal_locals()"})
-                contents = cast(
-                    str, self.view.substr(sublime.Region(0, self.view.size()))
-                )
+                contents = cast(str, self.view.substr(sublime.Region(0, self.view.size())))
                 sublime.set_timeout_async(lambda: self.view.run_command("undo"), 0)
-                self.run_mypy(
-                    contents=contents,
-                    line_number=self.view.rowcol(r.end())[0] + 2,
-                    locals=True,
-                )
+                self.run_mypy(contents=contents, line_number=self.view.rowcol(r.end())[0] + 2, locals=True)
             else:
-                contents = cast(
-                    str, self.view.substr(sublime.Region(0, self.view.size()))
-                )
                 bounds = self.get_bounds(r)
-                self.run_mypy(
-                    contents=self.get_modified_contents(self.get_bounds(r), contents),
-                    line_number=self.view.rowcol(bounds[0])[0] + 1,
-                    selection=contents[bounds[0] : bounds[1]],
-                )
+                contents = cast(str, self.view.substr(sublime.Region(0, self.view.size())))
+                selection = contents[bounds[0] : bounds[1]]
+
+                if failed:
+                    self.view.run_command("move_to", {"to": "eol"})
+                    self.view.run_command("insert", {"characters": "\nreveal_type({})".format(selection)})
+                    modified_contents = cast(str, self.view.substr(sublime.Region(0, self.view.size())))
+                    sublime.set_timeout_async(lambda: self.view.run_command("undo"), 0)
+                    self.run_mypy(
+                        contents=modified_contents,
+                        line_number=self.view.rowcol(bounds[0])[0] + 2,
+                        selection=selection,
+                        failed=True,
+                    )
+                else:
+                    self.run_mypy(
+                        contents=self.get_modified_contents(self.get_bounds(r), contents),
+                        line_number=self.view.rowcol(bounds[0])[0] + 1,
+                        selection=selection,
+                    )
             break
 
     def show_popup(self, contents: str) -> None:
-        self.view.show_popup(
-            "<style>body {{ min-height: 100px }}</style><p>{}</p>".format(contents),
-            max_width=800,
-        )
+        self.view.show_popup("<style>body {{ min-height: 100px }}</style><p>{}</p>".format(contents), max_width=800)
 
     def get_modified_contents(self, bounds, contents):
         # type: (Tuple[int, int], str) -> str
         start, end = bounds
-        return "{}reveal_type({}){}".format(
-            contents[0:start], contents[start:end], contents[end:]
-        )
+        return "{}reveal_type({}){}".format(contents[0:start], contents[start:end], contents[end:])
 
     def get_modified_contents_locals(self, begin: int, contents: str) -> str:
         return contents
@@ -105,13 +109,13 @@ class MypyRevealCommand(sublime_plugin.TextCommand):
         view_size = self.view.size()  # type: int
         included = list("{}{}_".format(string.ascii_letters, string.digits))
 
-        # move the selection back to the start of the url
+        # move selection backwards
         while start > 0:
             if cast(str, self.view.substr(start - 1)) not in included:
                 break
             start -= 1
 
-        # move end of selection forward to the end of the url
+        # move selection forwards
         while end < view_size:
             if cast(str, self.view.substr(end)) not in included:
                 break
@@ -119,32 +123,48 @@ class MypyRevealCommand(sublime_plugin.TextCommand):
         return start, end
 
     def run_mypy(
-        self, contents: str, line_number: int, selection: str = "", locals=False
+        self, contents: str, line_number: int, selection: str = "", locals: bool = False, failed: bool = False
     ) -> None:
         """Runs on another thread to avoid blocking main thread.
         """
 
         def sp() -> None:
             p = subprocess.Popen(
-                ["mypy", "-c", contents],
-                cwd=self.project_path(),
-                stdout=subprocess.PIPE,
+                [self.get_executable(), "-c", contents], cwd=self.project_path(), stdout=subprocess.PIPE
             )
             out, err = p.communicate()
             if locals:
-                popup_contents = parse_locals_output(
-                    out.decode("utf-8"), line_number
-                )  # type: str
+                popup_contents = parse_locals_output(out.decode("utf-8"), line_number)  # type: str
                 self.show_popup(popup_contents)
             else:
+                if not failed and ": error: " in out.decode("utf-8"):  # retry on first failure
+                    self.view.run_command("mypy_reveal", {"locals": False, "failed": True})
+                    return
                 popup_contents = parse_output(out.decode("utf-8"), line_number)
                 if selection:
-                    popup_contents = '<p>"{}"</p><p>{}</p>'.format(
-                        selection, popup_contents
-                    )
+                    popup_contents = '<p>"{}"</p><p>{}</p>'.format(selection, popup_contents)
                 self.show_popup(popup_contents)
 
         threading.Thread(target=sp).start()
+
+    def get_executable(self) -> str:
+        project = self.view.window().project_data()
+        try:
+            return os.path.expanduser(project["settings"]["MypyReveal.executable"])
+        except Exception:
+            pass
+
+        try:
+            return os.path.expanduser(project["settings"]["SublimeLinter.linters.mypy.executable"])
+        except Exception:
+            pass
+
+        try:
+            return sublime.load_settings("MypyReveal.sublime-settings").get("executable", "mypy")
+        except Exception:
+            pass
+
+        return "mypy"
 
     def project_path(self):
         # type: () -> Optional[str]

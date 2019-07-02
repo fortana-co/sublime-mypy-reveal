@@ -87,7 +87,17 @@ class MypyRevealCommand(sublime_plugin.TextCommand):
             break
 
     def show_popup(self, contents: str) -> None:
-        self.view.show_popup("<style>body {{ min-height: 100px }}</style><p>{}</p>".format(contents), max_width=800)
+        def on_navigate(href: str) -> None:
+            if href == "copy":
+                sublime.set_clipboard(contents)
+                sublime.active_window().status_message("MypyReveal: type info copied to clipboard")
+                self.view.hide_popup()
+
+        self.view.show_popup(
+            "<style>body {{ min-height: 100px }}</style><p>{}</p><a href=\"copy\">Copy</a>".format(contents),
+            max_width=800,
+            on_navigate=on_navigate,
+        )
 
     def get_modified_contents(self, bounds, contents):
         # type: (Tuple[int, int], str) -> str

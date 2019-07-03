@@ -152,7 +152,7 @@ class MypyRevealCommand(sublime_plugin.TextCommand):
                     return
                 popup_contents = parse_output(out.decode("utf-8"), line_number)
                 if selection:
-                    popup_contents = '<p>"{}"</p><p>{}</p>'.format(selection, popup_contents)
+                    popup_contents = '<p>"{}"</p>{}'.format(selection, popup_contents)
                 self.show_popup(popup_contents)
 
         threading.Thread(target=sp).start()

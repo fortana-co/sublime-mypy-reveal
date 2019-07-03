@@ -32,6 +32,21 @@ def parse_output(out: str, line_number: int) -> str:
         return ""
 
 
+def clean_contents(contents: str) -> str:
+    return (
+        contents.replace("<p>", "")
+        .replace("</p>", "\n\n")
+        .replace("<br>", "\n")
+        .replace("<span>", "")
+        .replace("</span>", "")
+        .replace("<b>", "")
+        .replace("</b>", "")
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+    )
+
+
 def parse_locals_output(out: str, line_number: int) -> str:
     lines = []
     for line in out.splitlines():
@@ -89,12 +104,12 @@ class MypyRevealCommand(sublime_plugin.TextCommand):
     def show_popup(self, contents: str) -> None:
         def on_navigate(href: str) -> None:
             if href == "copy":
-                sublime.set_clipboard(contents)
+                sublime.set_clipboard(clean_contents(contents))
                 sublime.active_window().status_message("MypyReveal: type info copied to clipboard")
                 self.view.hide_popup()
 
         self.view.show_popup(
-            "<style>body {{ min-height: 100px }}</style><p>{}</p><a href=\"copy\">Copy</a>".format(contents),
+            '<style>body {{ min-height: 100px }}</style><p>{}</p><a href="copy">Copy</a>'.format(contents),
             max_width=800,
             on_navigate=on_navigate,
         )
